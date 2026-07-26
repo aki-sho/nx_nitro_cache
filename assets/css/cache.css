@@ -1,0 +1,567 @@
+/*
+ * NX Nitro Cache
+ * 管理画面全体
+ */
+.nx-nitro-cache {
+  max-width: 1180px;
+  margin: 0 auto;
+  color: #172033;
+}
+
+.nx-nitro-cache *,
+.nx-nitro-cache *::before,
+.nx-nitro-cache *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * ページ上部
+ */
+.nx-nitro-cache-header {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 30px;
+  margin-bottom: 22px;
+  overflow: hidden;
+  color: #ffffff;
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(96, 165, 250, 0.34),
+      transparent 38%
+    ),
+    linear-gradient(
+      135deg,
+      #111827 0%,
+      #172554 55%,
+      #1e3a8a 100%
+    );
+  border-radius: 18px;
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.22);
+}
+
+.nx-nitro-cache-header::after {
+  position: absolute;
+  right: -45px;
+  bottom: -70px;
+  width: 230px;
+  height: 230px;
+  content: "";
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+}
+
+.nx-nitro-cache-label {
+  margin-bottom: 9px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #93c5fd;
+}
+
+.nx-nitro-cache-header h1 {
+  margin: 0 0 10px;
+  font-size: 32px;
+  line-height: 1.2;
+  color: #ffffff;
+}
+
+.nx-nitro-cache-header p {
+  max-width: 600px;
+  margin: 0;
+  line-height: 1.8;
+  color: #cbd5e1;
+}
+
+/*
+ * 有効・無効表示
+ */
+.nx-nitro-cache-status {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #dbeafe;
+  background: rgba(15, 23, 42, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+}
+
+.nx-nitro-cache-status-dot {
+  width: 9px;
+  height: 9px;
+  background: #94a3b8;
+  border-radius: 50%;
+}
+
+.nx-nitro-cache-status.is-enabled
+.nx-nitro-cache-status-dot {
+  background: #4ade80;
+  box-shadow:
+    0 0 0 5px rgba(74, 222, 128, 0.13),
+    0 0 14px rgba(74, 222, 128, 0.72);
+}
+
+.nx-nitro-cache-status.is-disabled
+.nx-nitro-cache-status-dot {
+  background: #f87171;
+  box-shadow:
+    0 0 0 5px rgba(248, 113, 113, 0.13);
+}
+
+/*
+ * 保存メッセージ
+ */
+.nx-nitro-cache-notice {
+  padding: 14px 17px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.nx-nitro-cache-notice-success {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.nx-nitro-cache-notice-error {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+/*
+ * キャッシュ統計
+ */
+.nx-nitro-cache-stats {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.nx-nitro-cache-stat {
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.nx-nitro-cache-stat > span {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.nx-nitro-cache-stat strong {
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 27px;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.nx-nitro-cache-stat
+.nx-nitro-cache-stat-date {
+  display: block;
+  font-size: 17px;
+}
+
+.nx-nitro-cache-stat small {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/*
+ * メインレイアウト
+ */
+.nx-nitro-cache-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.65fr)
+    minmax(300px, 0.85fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.nx-nitro-cache-side {
+  display: grid;
+  gap: 20px;
+}
+
+/*
+ * カード共通
+ */
+.nx-nitro-cache-card {
+  padding: 24px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.nx-nitro-cache-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.nx-nitro-cache-card h2 {
+  margin: 0 0 6px;
+  font-size: 19px;
+  color: #0f172a;
+}
+
+.nx-nitro-cache-card h3 {
+  margin: 22px 0 10px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.nx-nitro-cache-card-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+/*
+ * 設定項目
+ */
+.nx-nitro-cache-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 25px;
+  padding: 20px 0;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.nx-nitro-cache-setting-title {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.nx-nitro-cache-setting p,
+.nx-nitro-cache-field p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #64748b;
+}
+
+/*
+ * ON・OFFスイッチ
+ */
+.nx-nitro-cache-switch {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 48px;
+  height: 26px;
+  cursor: pointer;
+}
+
+.nx-nitro-cache-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.nx-nitro-cache-switch span {
+  position: absolute;
+  inset: 0;
+  background: #cbd5e1;
+  border-radius: 999px;
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.nx-nitro-cache-switch span::before {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  content: "";
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow:
+    0 2px 5px rgba(15, 23, 42, 0.25);
+  transition: transform 0.2s ease;
+}
+
+.nx-nitro-cache-switch
+input:checked + span {
+  background: #2563eb;
+}
+
+.nx-nitro-cache-switch
+input:checked + span::before {
+  transform: translateX(22px);
+}
+
+.nx-nitro-cache-switch
+input:focus-visible + span {
+  box-shadow:
+    0 0 0 4px rgba(37, 99, 235, 0.2);
+}
+
+/*
+ * 入力項目
+ */
+.nx-nitro-cache-field {
+  padding-top: 21px;
+}
+
+.nx-nitro-cache-field > label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.nx-nitro-cache-field select,
+.nx-nitro-cache-field textarea {
+  width: 100%;
+  padding: 11px 12px;
+  font: inherit;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+}
+
+.nx-nitro-cache-field select {
+  max-width: 260px;
+}
+
+.nx-nitro-cache-field textarea {
+  min-height: 165px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.nx-nitro-cache-field select:focus,
+.nx-nitro-cache-field textarea:focus {
+  border-color: #2563eb;
+  box-shadow:
+    0 0 0 3px rgba(37, 99, 235, 0.13);
+}
+
+.nx-nitro-cache-field p {
+  margin-top: 8px;
+}
+
+/*
+ * ボタン
+ */
+.nx-nitro-cache-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 24px;
+}
+
+.nx-nitro-cache-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 10px 18px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  border: 0;
+  border-radius: 8px;
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.nx-nitro-cache-button:hover {
+  transform: translateY(-1px);
+}
+
+.nx-nitro-cache-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  transform: none;
+}
+
+.nx-nitro-cache-button-primary {
+  color: #ffffff;
+  background:
+    linear-gradient(
+      135deg,
+      #2563eb,
+      #1d4ed8
+    );
+  box-shadow:
+    0 8px 18px rgba(37, 99, 235, 0.22);
+}
+
+.nx-nitro-cache-button-danger {
+  width: 100%;
+  color: #b91c1c;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+}
+
+.nx-nitro-cache-button-danger:hover {
+  background: #ffe4e6;
+}
+
+/*
+ * キャッシュ詳細
+ */
+.nx-nitro-cache-details {
+  margin: 0 0 20px;
+}
+
+.nx-nitro-cache-details > div {
+  padding: 15px 0;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.nx-nitro-cache-details dt {
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.nx-nitro-cache-details dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  word-break: break-word;
+}
+
+.nx-nitro-cache-details code {
+  font-size: 11px;
+  color: #334155;
+}
+
+/*
+ * 説明カード
+ */
+.nx-nitro-cache-info-card {
+  background:
+    linear-gradient(
+      145deg,
+      #f8fafc,
+      #eff6ff
+    );
+}
+
+.nx-nitro-cache-info-card ul {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+}
+
+.nx-nitro-cache-info-card li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.nx-nitro-cache-info-card li::before {
+  position: absolute;
+  top: 7px;
+  left: 2px;
+  width: 6px;
+  height: 6px;
+  content: "";
+  background: #3b82f6;
+  border-radius: 50%;
+}
+
+/*
+ * タブレット
+ */
+@media (max-width: 1000px) {
+  .nx-nitro-cache-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .nx-nitro-cache-side {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+/*
+ * スマートフォン
+ */
+@media (max-width: 720px) {
+  .nx-nitro-cache-header {
+    flex-direction: column;
+    padding: 23px;
+  }
+
+  .nx-nitro-cache-header h1 {
+    font-size: 26px;
+  }
+
+  .nx-nitro-cache-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .nx-nitro-cache-side {
+    grid-template-columns: 1fr;
+  }
+
+  .nx-nitro-cache-setting {
+    align-items: flex-start;
+  }
+
+  .nx-nitro-cache-card {
+    padding: 20px;
+  }
+
+  .nx-nitro-cache-actions {
+    justify-content: stretch;
+  }
+
+  .nx-nitro-cache-button-primary {
+    width: 100%;
+  }
+}

@@ -1,0 +1,29 @@
+# Release packages
+*.zip
+
+# PHP dependencies
+vendor/
+composer.lock
+
+# Environment files
+.env
+.env.*
+
+# Runtime and temporary files
+storage/
+cache/
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Editors
+.vscode/
+.idea/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
