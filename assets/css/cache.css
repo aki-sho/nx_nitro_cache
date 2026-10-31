@@ -351,6 +351,8 @@ input:focus-visible + span {
 }
 
 .nx-nitro-cache-field select,
+.nx-nitro-cache-field input[type="number"],
+.nx-nitro-cache-field input[type="url"],
 .nx-nitro-cache-field textarea {
   width: 100%;
   padding: 11px 12px;
@@ -362,7 +364,8 @@ input:focus-visible + span {
   outline: none;
 }
 
-.nx-nitro-cache-field select {
+.nx-nitro-cache-field select,
+.nx-nitro-cache-field input[type="number"] {
   max-width: 260px;
 }
 
@@ -373,6 +376,8 @@ input:focus-visible + span {
 }
 
 .nx-nitro-cache-field select:focus,
+.nx-nitro-cache-field input[type="number"]:focus,
+.nx-nitro-cache-field input[type="url"]:focus,
 .nx-nitro-cache-field textarea:focus {
   border-color: #2563eb;
   box-shadow:
@@ -381,6 +386,15 @@ input:focus-visible + span {
 
 .nx-nitro-cache-field p {
   margin-top: 8px;
+}
+
+.nx-nitro-cache-metrics {
+  margin-bottom: 24px;
+}
+
+.nx-nitro-cache-card form + form,
+.nx-nitro-cache-card form > button {
+  margin-top: 14px;
 }
 
 /*

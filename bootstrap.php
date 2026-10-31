@@ -22,7 +22,11 @@ if (
  */
 $includeFiles = [
     __DIR__ . '/includes/Settings.php',
+    __DIR__ . '/includes/CacheUrl.php',
     __DIR__ . '/includes/CacheManager.php',
+    __DIR__ . '/includes/Dependencies.php',
+    __DIR__ . '/includes/Metrics.php',
+    __DIR__ . '/includes/Warmup.php',
     __DIR__ . '/includes/CacheCleaner.php',
     __DIR__ . '/includes/PageCache.php',
     __DIR__ . '/includes/SettingsController.php',
@@ -57,6 +61,14 @@ $router->post(
     SettingsController::class
     . '@clearCache'
 );
+
+foreach ([
+    'delete-urls' => 'deleteUrls', 'queue-warmup' => 'queueWarmup',
+    'run-warmup' => 'runWarmup', 'cancel-warmup' => 'cancelWarmup',
+    'reset-metrics' => 'resetMetrics',
+] as $route => $method) {
+    $router->post($settingsBase . '/' . $route, SettingsController::class . '@' . $method);
+}
 
 /*
  * 投稿・固定ページなどの更新後に

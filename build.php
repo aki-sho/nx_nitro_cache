@@ -92,6 +92,7 @@ if (
 $releaseFiles = [
     'manifest.json',
     'bootstrap.php',
+    'warm-cache.php',
     'README.md',
     'LICENSE',
     'img.png',
@@ -192,7 +193,7 @@ if ($openResult !== true) {
 /*
  * ZIP内のルートフォルダを作成
  *
- * nx_nitro_cache-1.0.0.zip
+ * nx_nitro_cache-{version}.zip
  * └─nx_nitro_cache
  */
 $zipRoot = $extensionId;

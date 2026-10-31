@@ -2,447 +2,174 @@
 
 namespace NxNitroCache;
 
-/*
- * 公開ページのHTMLキャッシュを制御
- */
+use Throwable;
+
 class PageCache
 {
-    /*
-     * 二重起動防止
-     */
     private static bool $started = false;
-
-    /*
-     * 現在のキャッシュキー
-     */
     private static ?string $cacheKey = null;
+    private static ?string $generation = null;
+    private static float $startedAt = 0;
+    private static bool $finished = false;
+    private static ?string $lastReason = null;
 
-    /*
-     * ページキャッシュ処理を開始
-     */
     public static function boot(): void
     {
-        if (self::$started) {
-            return;
-        }
-
+        if (self::$started) { return; }
         self::$started = true;
-
-        /*
-         * キャッシュ対象外の場合は終了
-         */
-        if (!self::shouldCacheRequest()) {
+        self::$startedAt = microtime(true);
+        $reason = headers_sent() ? 'headers_sent' : self::requestReason();
+        if ($reason === null) { $reason = self::responseReason('<html>'); }
+        if ($reason !== null) {
+            self::bypass($reason);
             return;
         }
-
-        $ttl = (int)Settings::get(
-            'ttl',
-            3600
-        );
-
-        $identifier =
-            self::cacheIdentifier();
-
-        $cacheKey =
-            CacheManager::buildKey(
-                $identifier
-            );
-
-        /*
-         * 保存済みキャッシュを取得
-         */
-        $cachedHtml =
-            CacheManager::get(
-                $cacheKey,
-                $ttl
-            );
-
-        /*
-         * キャッシュが見つかった場合は
-         * NexaPress本体の処理を行わず表示
-         */
-        if ($cachedHtml !== null) {
-            if (!headers_sent()) {
-                header(
-                    'X-NX-Nitro-Cache: HIT'
-                );
+        $path = self::requestPath();
+        $ttl = Settings::ttlForPath($path);
+        $key = self::cacheIdentifier();
+        try {
+            $response = CacheManager::getResponse($key, $ttl);
+            if ($response !== null) {
+                self::restoreHeaders($response['headers']);
+                header('Age: ' . $response['age']);
+                header('X-NX-Nitro-Cache: HIT');
+                Metrics::record('hit', null, self::elapsed());
+                echo $response['html'];
+                exit;
             }
-
-            echo $cachedHtml;
-            exit;
+            self::$generation = CacheManager::generation();
+        } catch (Throwable $exception) {
+            self::bypass('storage');
+            return;
         }
-
-        /*
-         * キャッシュがない場合は
-         * NexaPressが生成するHTMLを取得
-         */
-        self::$cacheKey = $cacheKey;
-
-        if (!headers_sent()) {
-            header(
-                'X-NX-Nitro-Cache: MISS'
-            );
-        }
-
-        ob_start(
-            [self::class, 'captureOutput']
-        );
+        if (self::$generation === null) { self::bypass('storage'); return; }
+        self::$cacheKey = $key;
+        header('X-NX-Nitro-Cache: MISS');
+        Metrics::record('miss');
+        ob_start([self::class, 'captureOutput']);
     }
 
-    /*
-     * NexaPressが生成したHTMLを保存
-     */
-    public static function captureOutput(
-        string $html,
-        int $phase = PHP_OUTPUT_HANDLER_FINAL
-    ): string {
-        /*
-         * 最終出力以外は保存しない
-         */
-        if (
-            ($phase & PHP_OUTPUT_HANDLER_FINAL)
-            !== PHP_OUTPUT_HANDLER_FINAL
-        ) {
+    public static function captureOutput(string $html, int $phase = PHP_OUTPUT_HANDLER_FINAL): string
+    {
+        if (self::$finished || self::$cacheKey === null) { return $html; }
+        if (($phase & PHP_OUTPUT_HANDLER_FINAL) === 0 || ($phase & PHP_OUTPUT_HANDLER_CLEAN) !== 0) {
+            self::$finished = true;
+            Metrics::record('not_stored', 'partial');
             return $html;
         }
-
-        if (self::$cacheKey === null) {
+        self::$finished = true;
+        $reason = self::requestReason() ?? self::responseReason($html);
+        if ($reason !== null) {
+            Metrics::record('not_stored', $reason);
             return $html;
         }
-
-        if (!self::canStoreResponse($html)) {
-            return $html;
+        try {
+            $path = self::requestPath();
+            $stored = CacheManager::put(self::$cacheKey, $html, headers_list(), self::$generation, [
+                'path' => $path, 'tags' => Dependencies::describe($path),
+            ]);
+            Metrics::record($stored ? 'stored' : 'not_stored', $stored ? null : 'storage', self::elapsed());
+        } catch (Throwable $exception) {
+            Metrics::record('not_stored', 'storage');
         }
-
-        CacheManager::put(
-            self::$cacheKey,
-            $html
-        );
-
         return $html;
     }
 
-    /*
-     * 現在のアクセスを
-     * キャッシュしてよいか判定
-     */
-    private static function shouldCacheRequest(): bool
+    private static function bypass(string $reason): void
     {
-        /*
-         * キャッシュ機能が無効
-         */
-        if (
-            !Settings::get(
-                'enabled',
-                true
-            )
-        ) {
-            return false;
+        self::$lastReason = $reason;
+        if (!headers_sent()) {
+            header('X-NX-Nitro-Cache: BYPASS');
+            header('X-NX-Nitro-Reason: ' . $reason);
         }
-
-        /*
-         * GET以外はキャッシュしない
-         */
-        $method = strtoupper(
-            $_SERVER['REQUEST_METHOD']
-            ?? 'GET'
-        );
-
-        if ($method !== 'GET') {
-            return false;
-        }
-
-        /*
-         * ログイン中はキャッシュしない
-         */
-        if (!empty($_SESSION['user'])) {
-            return false;
-        }
-
-        /*
-         * クエリーパラメータ付きURLは
-         * 初期版ではキャッシュしない
-         */
-        $queryString =
-            $_SERVER['QUERY_STRING']
-            ?? '';
-
-        if ($queryString !== '') {
-            return false;
-        }
-
-        $requestPath =
-            self::requestPath();
-
-        /*
-         * 管理画面やインストール画面を除外
-         */
-        $reservedPaths = [
-            '/admin',
-            '/install',
-        ];
-
-        foreach ($reservedPaths as $reservedPath) {
-            if (
-                $requestPath === $reservedPath ||
-                str_starts_with(
-                    $requestPath,
-                    $reservedPath . '/'
-                )
-            ) {
-                return false;
-            }
-        }
-
-        /*
-         * ユーザー設定の除外URLを確認
-         */
-        if (
-            self::isExcludedPath(
-                $requestPath
-            )
-        ) {
-            return false;
-        }
-
-        return true;
+        Metrics::record('bypass', $reason);
     }
 
-    /*
-     * 生成されたレスポンスを
-     * 保存してよいか確認
-     */
-    private static function canStoreResponse(
-        string $html
-    ): bool {
-        if (trim($html) === '') {
-            return false;
+    private static function requestReason(): ?string
+    {
+        if (!Settings::get('enabled', true)) { return 'disabled'; }
+        if (strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'GET') { return 'method'; }
+        if (!empty($_SESSION)) { return 'session'; }
+        if (!empty($_COOKIE) || !empty($_SERVER['HTTP_COOKIE'])) { return 'cookie'; }
+        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'PHP_AUTH_USER', 'PHP_AUTH_PW', 'PHP_AUTH_DIGEST'] as $name) {
+            if (isset($_SERVER[$name])) { return 'authorization'; }
         }
+        if (isset($_SERVER['HTTP_RANGE']) || isset($_SERVER['HTTP_ORIGIN'])) { return 'range_or_origin'; }
+        if (self::trustedHost() === null) { return 'host'; }
+        $control = strtolower((string)($_SERVER['HTTP_CACHE_CONTROL'] ?? ''));
+        if (preg_match('/(?:^|,)\s*(?:no-cache|no-store)(?:\s*(?:=|,|$))/', $control) ||
+            preg_match('/(?:^|,)\s*max-age\s*=\s*"?0"?(?:\s*(?:,|$))/', $control) ||
+            str_contains(strtolower((string)($_SERVER['HTTP_PRAGMA'] ?? '')), 'no-cache')) { return 'request_no_cache'; }
+        $uri = (string)($_SERVER['REQUEST_URI'] ?? '');
+        if (!empty($_SERVER['QUERY_STRING']) || str_contains($uri, '?')) { return 'query'; }
+        $path = CacheUrl::relative($uri, defined('BASE_URL') ? BASE_URL : '');
+        if ($path === null) { return 'path'; }
+        if (CacheUrl::excluded($path)) { return 'excluded'; }
+        return null;
+    }
 
-        /*
-         * HTMLページ以外は保存しない
-         */
-        if (
-            stripos(
-                $html,
-                '<html'
-            ) === false
-        ) {
-            return false;
+    private static function responseReason(string $html): ?string
+    {
+        $error = error_get_last();
+        if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR], true)) {
+            return 'fatal';
         }
-
-        /*
-         * HTTP 200以外は保存しない
-         */
-        $statusCode =
-            http_response_code();
-
-        if (
-            is_int($statusCode) &&
-            $statusCode !== 200
-        ) {
-            return false;
-        }
-
-        /*
-         * リダイレクトや
-         * キャッシュ禁止ヘッダーを確認
-         */
+        if (trim($html) === '' || stripos($html, '<html') === false) { return 'empty_or_non_html'; }
+        $status = http_response_code();
+        if (is_int($status) && $status !== 200) { return 'status'; }
         foreach (headers_list() as $header) {
-            $normalizedHeader =
-                strtolower($header);
-
-            if (
-                str_starts_with(
-                    $normalizedHeader,
-                    'location:'
-                )
-            ) {
-                return false;
-            }
-
-            if (
-                str_starts_with(
-                    $normalizedHeader,
-                    'content-type:'
-                ) &&
-                !str_contains(
-                    $normalizedHeader,
-                    'text/html'
-                )
-            ) {
-                return false;
-            }
-
-            if (
-                str_starts_with(
-                    $normalizedHeader,
-                    'cache-control:'
-                ) &&
-                (
-                    str_contains(
-                        $normalizedHeader,
-                        'no-store'
-                    ) ||
-                    str_contains(
-                        $normalizedHeader,
-                        'private'
-                    )
-                )
-            ) {
-                return false;
+            $normalized = strtolower($header);
+            [$name, $value] = array_pad(explode(':', $normalized, 2), 2, '');
+            $name = trim($name);
+            if (in_array($name, ['set-cookie', 'set-cookie2'], true)) { return 'set_cookie'; }
+            if ($name === 'vary') { return 'vary'; }
+            if (in_array($name, ['www-authenticate', 'content-range', 'content-encoding',
+                'access-control-allow-origin', 'access-control-allow-credentials'], true)) { return 'response_variant'; }
+            if (str_starts_with($name, 'content-security-policy') && str_contains($value, "'nonce-")) { return 'nonce'; }
+            if ($name === 'location') { return 'status'; }
+            if ($name === 'content-type' && !str_contains($value, 'text/html')) { return 'empty_or_non_html'; }
+            if (($name === 'pragma' && str_contains($value, 'no-cache')) ||
+                ($name === 'cache-control' &&
+                    (preg_match('/(?:^|,)\s*(?:private|no-store|no-cache)(?:\s*(?:=|,|$))/', $value) ||
+                        preg_match('/(?:^|,)\s*(?:s-maxage|max-age)\s*=\s*"?0"?(?:\s*(?:,|$))/', $value)))) {
+                return 'response_private';
             }
         }
-
-        return true;
+        return null;
     }
 
-    /*
-     * 設定された除外URLか確認
-     */
-    private static function isExcludedPath(
-        string $requestPath
-    ): bool {
-        $excludedPaths =
-            Settings::get(
-                'excluded_paths',
-                []
-            );
-
-        if (!is_array($excludedPaths)) {
-            return false;
-        }
-
-        foreach ($excludedPaths as $excludedPath) {
-            if (!is_string($excludedPath)) {
-                continue;
-            }
-
-            $excludedPath =
-                trim($excludedPath);
-
-            if ($excludedPath === '') {
-                continue;
-            }
-
-            $excludedPath =
-                rawurldecode(
-                    $excludedPath
-                );
-
-            /*
-             * 末尾の*は前方一致
-             *
-             * 例：
-             * /member/*
-             */
-            if (
-                str_ends_with(
-                    $excludedPath,
-                    '*'
-                )
-            ) {
-                $prefix = substr(
-                    $excludedPath,
-                    0,
-                    -1
-                );
-
-                if (
-                    str_starts_with(
-                        $requestPath,
-                        $prefix
-                    )
-                ) {
-                    return true;
-                }
-
-                continue;
-            }
-
-            if (
-                $requestPath
-                === $excludedPath
-            ) {
-                return true;
-            }
-        }
-
-        return false;
+    private static function shouldCacheRequest(): bool { return self::requestReason() === null; }
+    private static function canStoreResponse(string $html): bool
+    {
+        return self::requestReason() === null && self::responseReason($html) === null;
     }
 
-    /*
-     * キャッシュキー作成用の
-     * 識別文字列を取得
-     */
     private static function cacheIdentifier(): string
     {
-        $host = strtolower(
-            (string)(
-                $_SERVER['HTTP_HOST']
-                ?? ''
-            )
-        );
-
-        $baseUrl = defined('BASE_URL')
-            ? rtrim(BASE_URL, '/')
-            : '';
-
-        return $host
-            . '|'
-            . $baseUrl
-            . '|'
-            . self::requestPath();
+        return CacheUrl::key(self::scheme(), self::trustedHost() ?? '',
+            defined('BASE_URL') ? BASE_URL : '', (string)($_SERVER['REQUEST_URI'] ?? '/'));
     }
-
-    /*
-     * NexaPressの設置先を除いた
-     * リクエストパスを取得
-     */
+    private static function scheme(): string
+    {
+        return !empty($_SERVER['HTTPS']) && strtolower((string)$_SERVER['HTTPS']) !== 'off' ? 'https' : 'http';
+    }
+    private static function trustedHost(): ?string
+    {
+        $authority = (string)($_SERVER['HTTP_HOST'] ?? '');
+        return CacheUrl::allowed($authority, self::scheme()) ? CacheUrl::host($authority, self::scheme()) : null;
+    }
     private static function requestPath(): string
     {
-        $requestUri =
-            $_SERVER['REQUEST_URI']
-            ?? '/';
+        return CacheUrl::relative((string)($_SERVER['REQUEST_URI'] ?? '/'), defined('BASE_URL') ? BASE_URL : '') ?? '/';
+    }
+    private static function elapsed(): float { return (microtime(true) - self::$startedAt) * 1000; }
 
-        $path = parse_url(
-            $requestUri,
-            PHP_URL_PATH
-        );
-
-        if (!is_string($path)) {
-            return '/';
+    private static function restoreHeaders(array $headers): void
+    {
+        $present = [];
+        foreach (headers_list() as $header) { $present[strtolower(trim(explode(':', $header, 2)[0]))] = true; }
+        foreach (CacheManager::safeHeaders($headers) as $header) {
+            if (!isset($present[strtolower(trim(explode(':', $header, 2)[0]))])) { header($header, false); }
         }
-
-        $baseUrl = defined('BASE_URL')
-            ? rtrim(BASE_URL, '/')
-            : '';
-
-        if (
-            $baseUrl !== '' &&
-            str_starts_with(
-                $path,
-                $baseUrl
-            )
-        ) {
-            $path = substr(
-                $path,
-                strlen($baseUrl)
-            );
-        }
-
-        $path = rawurldecode($path);
-
-        $path =
-            '/' . ltrim($path, '/');
-
-        if ($path !== '/') {
-            $path = rtrim(
-                $path,
-                '/'
-            );
-        }
-
-        return $path;
     }
 }

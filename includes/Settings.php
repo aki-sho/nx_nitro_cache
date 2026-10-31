@@ -35,6 +35,17 @@ class Settings
              * コンテンツ更新時の自動削除
              */
             'auto_clear' => true,
+            'max_size_mb' => 100,
+            'max_files' => 1000,
+            'max_page_kb' => 2048,
+            'allowed_hosts' => [],
+            'invalidation_mode' => 'related',
+            'metrics_enabled' => true,
+            'ttl_rules' => [],
+            'warmup_enabled' => false,
+            'warm_base_url' => '',
+            'warmup_paths' => ['/', '/posts'],
+            'warm_allow_private' => false,
         ];
     }
 
@@ -53,7 +64,7 @@ class Settings
         $json = file_get_contents($path);
 
         if ($json === false) {
-            return $defaults;
+            return array_replace($defaults, ['enabled' => false]);
         }
 
         $savedSettings = json_decode(
@@ -62,7 +73,7 @@ class Settings
         );
 
         if (!is_array($savedSettings)) {
-            return $defaults;
+            return array_replace($defaults, ['enabled' => false]);
         }
 
         return array_replace(
@@ -115,9 +126,109 @@ class Settings
 
             'auto_clear' =>
                 !empty($input['auto_clear']),
+
+            'max_size_mb' => max(1, min(1024, (int)($input['max_size_mb'] ?? 100))),
+            'max_files' => max(1, min(10000, (int)($input['max_files'] ?? 1000))),
+            'max_page_kb' => max(16, min(10240, (int)($input['max_page_kb'] ?? 2048))),
+            'allowed_hosts' => self::normalizeHosts($input['allowed_hosts'] ?? []),
+            'invalidation_mode' => ($input['invalidation_mode'] ?? 'related') === 'all' ? 'all' : 'related',
+            'metrics_enabled' => !empty($input['metrics_enabled']),
+            'ttl_rules' => self::normalizeTtlRules($input['ttl_rules'] ?? []),
+            'warmup_enabled' => !empty($input['warmup_enabled']),
+            'warm_base_url' => trim((string)($input['warm_base_url'] ?? '')),
+            'warmup_paths' => self::normalizePublicPaths($input['warmup_paths'] ?? ['/', '/posts']),
+            'warm_allow_private' => !empty($input['warm_allow_private']),
         ];
 
+        if ($settings['warm_base_url'] !== '') {
+            $base = CacheUrl::base($settings['warm_base_url']);
+            if ($base === null) {
+                throw new RuntimeException('事前生成のサイトURLをhttp://またはhttps://で入力してください。');
+            }
+            $parts = parse_url($base);
+            $authority = $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '');
+            $allowed = array_filter($settings['allowed_hosts'], static function (string $host) use ($authority, $parts): bool {
+                return CacheUrl::host($host, $parts['scheme']) === CacheUrl::host($authority, $parts['scheme']);
+            });
+            if ($allowed === []) {
+                throw new RuntimeException('事前生成のサイトURLは許可するHostに登録してください。');
+            }
+            $settings['warm_base_url'] = $base;
+        }
+        if ($settings['warmup_enabled'] && $settings['warm_base_url'] === '') {
+            throw new RuntimeException('事前生成を有効にする場合はサイトURLを入力してください。');
+        }
         self::write($settings);
+    }
+
+    public static function ttlForPath(string $path, ?array $settings = null): int
+    {
+        $settings = $settings ?? self::all();
+        $ttl = max(60, min(604800, (int)$settings['ttl']));
+        $best = -1;
+        $path = rawurldecode($path);
+        foreach ((array)$settings['ttl_rules'] as $rule) {
+            if (!is_array($rule) || !is_string($rule['path'] ?? null)) { continue; }
+            $pattern = rawurldecode($rule['path']);
+            $wildcard = str_ends_with($pattern, '*');
+            $prefix = $wildcard ? substr($pattern, 0, -1) : $pattern;
+            $rank = strlen($prefix) * 2 + ($wildcard ? 0 : 1);
+            if (($wildcard ? str_starts_with($path, $prefix) : $path === $prefix) && $rank > $best) {
+                $ttl = max(60, min(604800, (int)($rule['ttl'] ?? $ttl)));
+                $best = $rank;
+            }
+        }
+        return $ttl;
+    }
+
+    public static function normalizePublicPaths(mixed $paths): array
+    {
+        if (is_string($paths)) { $paths = preg_split('/\R/', $paths); }
+        if (!is_array($paths) || count($paths) > 200) {
+            throw new RuntimeException('URLは1行につき1件、200件以内で入力してください。');
+        }
+        $result = [];
+        foreach ($paths as $path) {
+            if (!is_string($path)) { throw new RuntimeException('URLの形式が正しくありません。'); }
+            $path = trim($path);
+            if ($path === '') { continue; }
+            $valid = CacheUrl::path($path);
+            if ($valid === null) { throw new RuntimeException('サイト内のパスを入力してください（例：/post/example）。'); }
+            $result[] = $valid;
+        }
+        return array_values(array_unique($result));
+    }
+
+    private static function normalizeTtlRules(mixed $rules): array
+    {
+        if (is_string($rules)) {
+            $lines = preg_split('/\R/', $rules);
+            $rules = [];
+            foreach ($lines as $line) {
+                if (trim($line) === '') { continue; }
+                if (!preg_match('/^\s*(\S+)\s+([0-9]+)\s*$/', $line, $matches)) {
+                    throw new RuntimeException('保存時間のルールは「/post/* 3600」の形式で入力してください。');
+                }
+                $rules[] = ['path' => $matches[1], 'ttl' => (int)$matches[2]];
+            }
+        }
+        if (!is_array($rules) || count($rules) > 200) {
+            throw new RuntimeException('保存時間のルールは200件以内で入力してください。');
+        }
+        $normalized = [];
+        foreach ($rules as $rule) {
+            $pattern = is_array($rule) && is_string($rule['path'] ?? null) ? $rule['path'] : '';
+            $wildcard = str_ends_with($pattern, '*');
+            $prefix = $wildcard ? substr($pattern, 0, -1) : $pattern;
+            $path = CacheUrl::path($prefix);
+            $seconds = (int)($rule['ttl'] ?? 0);
+            if ($path === null || $seconds < 60 || $seconds > 604800 || str_contains($prefix, '*')) {
+                throw new RuntimeException('保存時間は60～604800秒で、URLの末尾だけに*を指定できます。');
+            }
+            if ($wildcard && $path !== '/' && str_ends_with($prefix, '/')) { $path .= '/'; }
+            $normalized[] = ['path' => $path . ($wildcard ? '*' : ''), 'ttl' => $seconds];
+        }
+        return $normalized;
     }
 
     /*
@@ -267,17 +378,53 @@ class Settings
             );
         }
 
-        if (
-            file_put_contents(
-                $path,
-                $json,
-                LOCK_EX
-            ) === false
-        ) {
-            throw new RuntimeException(
-                '設定を保存できません。'
-            );
+        $temporary = tempnam($directory, '.settings-');
+        if ($temporary === false) {
+            throw new RuntimeException('設定を保存できません。');
         }
+        try {
+            if (file_put_contents($temporary, $json) !== strlen($json) ||
+                !rename($temporary, $path)) {
+                throw new RuntimeException('設定を保存できません。');
+            }
+        } finally {
+            if (is_file($temporary)) {
+                @unlink($temporary);
+            }
+        }
+    }
+
+    private static function normalizeHosts(mixed $hosts): array
+    {
+        if (is_string($hosts)) {
+            $hosts = preg_split('/\R/', $hosts);
+        }
+        if (!is_array($hosts)) {
+            throw new RuntimeException('許可するHostを1行につき1件入力してください。');
+        }
+        $normalized = [];
+        foreach ($hosts as $host) {
+            if (!is_string($host)) {
+                throw new RuntimeException('許可するHostが正しくありません。');
+            }
+            $host = strtolower(trim($host));
+            if ($host === '') {
+                continue;
+            }
+            $parts = parse_url('http://' . $host);
+            if (strlen($host) > 260 || preg_match('/[^a-z0-9.\-:\[\]]/', $host) ||
+                !is_array($parts) || empty($parts['host']) ||
+                (filter_var(trim($parts['host'], '[]'), FILTER_VALIDATE_IP) === false &&
+                    filter_var($parts['host'], FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) === false) ||
+                (isset($parts['port']) && $parts['port'] < 1)) {
+                throw new RuntimeException('許可するHostにはドメイン名と必要なポート番号を入力してください。');
+            }
+            $normalized[] = $host;
+        }
+        if (count($normalized) > 50) {
+            throw new RuntimeException('許可するHostは50件以内で入力してください。');
+        }
+        return array_values(array_unique($normalized));
     }
 
     /*
